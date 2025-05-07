@@ -7,9 +7,9 @@ from solver import MIQPDefinition, MIQPSolver  # Adjust import as needed
 def generate_random_miqp(n_vars, n_constraints, n_int):
     Q = np.random.randn(n_vars, n_vars)
     Q = Q @ Q.T  # Make it positive semi-definite
-    c = np.random.randn(n_vars)
-    A = np.zeros((n_constraints, n_vars))
-    b = np.ones(n_constraints) * 100000
+    c = np.random.randn(n_vars)* 3
+    A = np.random.randn(n_constraints, n_vars)
+    b = np.random.randn(n_constraints)
     lb = -4 * np.ones(n_vars)
     ub = 4 * np.ones(n_vars)
     int_set = list(np.random.choice(n_vars, n_int, replace=False))
@@ -48,8 +48,8 @@ class TestMIQPSolverWithMosek(unittest.TestCase):
 
     def test_random_miqp(self):
         np.random.seed(0)  # For reproducibility
-        for _ in range(10):  # Run multiple test cases
-            defn = generate_random_miqp(n_vars=4, n_constraints=1, n_int=4)
+        for _ in range(100):  # Run multiple test cases
+            defn = generate_random_miqp(n_vars=10, n_constraints=1, n_int=4)
             miqp_solver = MIQPSolver(defn)
             found, x_miqp, obj_miqp = miqp_solver.solve()
 

@@ -72,7 +72,7 @@ class MIQPSolver:
             node.set_solution(self.x.value, self.problem.value)
             return True, node
         else:
-            print(f"Problem not solved optimally: {self.problem.status}")
+            
             return False, None
 
 
@@ -119,7 +119,7 @@ class MIQPSolver:
 
         while self.open_nodes:
             checked_nodes_num += 1
-            print(f"Checked nodes: {checked_nodes_num}, Open nodes: {len(self.open_nodes)}")    
+            
 
             node = self.open_nodes.pop(0)
             if self._is_integral(node.sol):
@@ -127,18 +127,18 @@ class MIQPSolver:
                 if self.best_solution is None or node.cost < self.upper_bound:
                     self.best_solution = node.sol.copy()
                     self.upper_bound = node.cost
-                    print(f"Found integral solution: {node.sol}, objective value: {node.cost}")
+                    
 
 
                     if np.isclose(self.lower_bound, self.upper_bound, atol=1e-6):
-                        print("Optimal solution found, stopping search. ==============")
+                        
                         return True, self.best_solution, self.upper_bound
                 
                     #prune if the cost is greater than the upper bound
                     i = 0
                     while i < len(self.open_nodes):
                         if self.open_nodes[i].cost >= self.upper_bound:
-                            print(f"Pruning node with cost {self.open_nodes[i].cost} >= upper bound {self.upper_bound}")
+                            
                             self.open_nodes.pop(i)
                         else:
                             i += 1
@@ -147,7 +147,7 @@ class MIQPSolver:
             # Branching on all integral variables
             for i in self.definition.int_set:
                 if not np.isclose(node.sol[i], round(node.sol[i]), atol=1e-3):
-                    print(f"Branching on variable {i}: {node.sol[i]} not integral")
+                    
                 # Create two new nodes for the branching
                     left_lb = node.lb.copy()    
                     left_ub = node.ub.copy()
@@ -157,23 +157,27 @@ class MIQPSolver:
                     right_lb[i] = np.ceil(node.sol[i])
                     right_ub = node.ub.copy()
                 
-                    # print(f"Branching on variable {i}: left = {left_definition.ub[i]}, right = {right_definition.lb[i]}")
+                    # 
 
                     left_success, left_node = self.create_node(left_lb, left_ub)
                     right_success, right_node = self.create_node(right_lb, right_ub)
 
                     if left_success:
                         self.open_nodes.append(left_node)
-                        print(f"Left node added with bounds {left_node.lb} and {left_node.ub}")
+                        
                     if right_success:
                         self.open_nodes.append(right_node)
-                        print(f"Right node added with bounds {right_node.lb} and {right_node.ub}")
+                        
                     break
 
             if self.open_nodes == []:
-                print("No more nodes to explore, stopping search.")
+                
                 break 
             self.lower_bound = min(node.cost for node in self.open_nodes)
+
+            # sort the open nodes by their cost
+            self.open_nodes.sort(key=lambda node: node.cost)
+
         return self.best_solution is not None, self.best_solution, self.upper_bound
 
             
