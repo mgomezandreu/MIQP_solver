@@ -45,28 +45,49 @@ class MIQPDefinition:
         )
 
 
-class MIQPSolver:
 
+class MIQPSolver:
     class MIQPSolverNode: 
-        def __init__(self, definition, parent=None):
-            self.definition = definition
-            self.parent = parent
-            self.children = []
+        def __init__(self, lb,ub, parent=None):
+            self.lb = lb
+            self.ub = ub
+            self.cost = None
+            self.sol = None
 
         def __str__(self):
             return f"MIQPSolverNode(definition={self.definition}, parent={self.parent})"
         
+        def set_solution(self, x,cost):
+            self.sol = x
+            self.cost = cost
+        
+    def create_node(self, lb, ub):
+        # Create a new node with the given bounds
+        node = self.MIQPSolverNode(lb, ub)
+        self.ub.value = ub
+        self.lb.value = lb
+
+        self.problem.solve()
+        if self.problem.status == cp.OPTIMAL or self.problem.status == cp.OPTIMAL_INACCURATE:
+            node.set_solution(self.x.value, self.problem.value)
+            return True, node
+        else:
+            print(f"Problem not solved optimally: {self.problem.status}")
+            return False, None
 
 
-    def __init__(self, definition, qp_solver=None):
+
+    def __init__(self, definition):
         self.definition = definition
 
         self.lb = cp.Parameter(definition.c.shape[0], name="lb")
         self.ub = cp.Parameter(definition.c.shape[0], name="ub")
 
+        self.best_solution = None
+        self.best_objective = None
 
         self.x = cp.Variable(definition.c.shape[0], name="x")
-        objective = cp.Minimize(cp.quad_form(self.x, definition.Q) + cp.sum(cp.multiply(definition.c, self.x)))
+        objective = cp.Minimize(cp.quad_form(self.x, definition.Q) + definition.c @ self.x)
         constraints = [
             definition.A @ self.x <= definition.b,
             self.x >= self.lb,
@@ -82,82 +103,78 @@ class MIQPSolver:
 
     def _is_integral(self, x):
         for i in self.definition.int_set:
-            if not np.isclose(x[i], round(x[i])):
+            if not np.isclose(x[i], round(x[i]), atol=1e-3):
                 return False
         return True
     
-    def _solve_relaxed(self, lb:np.array, ub:np.array):
-        # Solve the relaxed problem (ignoring integer constraints)
-        self.lb.value = lb
-        self.ub.value = ub
-
-        print(f"Solving relaxed problem with bounds: {lb}, {ub}")
-
-        self.problem.solve()
-        
-        if self.problem.status == cp.OPTIMAL or self.problem.status == cp.OPTIMAL_INACCURATE:
-            return True, self.x.value, self.problem.value   
-        else:
-            return False, None, None
-        
-    
 
     def solve(self):
-        start_node = self.MIQPSolverNode(self.definition)
-        self.open_nodes.append(start_node)
+        success, node = self.create_node(self.definition.lb, self.definition.ub)   
+        if not success:
+            return False, None, None
+
+        self.open_nodes.append(node)
+        checked_nodes_num = 0
+        self.lower_bound = node.cost
 
         while self.open_nodes:
-            current_node = self.open_nodes.pop(0)
-            print(f"Current node: {current_node}")
+            checked_nodes_num += 1
+            print(f"Checked nodes: {checked_nodes_num}, Open nodes: {len(self.open_nodes)}")    
 
-            success, x, cost = self._solve_relaxed(current_node.definition.lb, current_node.definition.ub)
-            if not success:
-                continue
-        
-            # If the solution is infeasible, skip this node, no further branching will make it feasible
-            if np.dot(current_node.definition.c, x) > self.upper_bound:
-                continue
+            node = self.open_nodes.pop(0)
+            if self._is_integral(node.sol):
+                # If the node is integral, check if it is better than the best solution
+                if self.best_solution is None or node.cost < self.upper_bound:
+                    self.best_solution = node.sol.copy()
+                    self.upper_bound = node.cost
+                    print(f"Found integral solution: {node.sol}, objective value: {node.cost}")
+
+
+                    if np.isclose(self.lower_bound, self.upper_bound, atol=1e-6):
+                        print("Optimal solution found, stopping search. ==============")
+                        return True, self.best_solution, self.upper_bound
+                
+                    #prune if the cost is greater than the upper bound
+                    i = 0
+                    while i < len(self.open_nodes):
+                        if self.open_nodes[i].cost >= self.upper_bound:
+                            print(f"Pruning node with cost {self.open_nodes[i].cost} >= upper bound {self.upper_bound}")
+                            self.open_nodes.pop(i)
+                        else:
+                            i += 1
             
-            # Update the lower bound if the solution is feasible, making it tighter if possible
-            self.lower_bound = max(self.lower_bound, cost)
-
-            # If a integral solution is found this bounds the problem form above
-            if self._is_integral(x):
-                self.upper_bound = min(self.upper_bound, cost)
-                print(f"Found integral solution: {x}, objective value: {cost}")
-    
-
-            # When the bounds are equal, we have found an optimal solution
-            print(f"Current bounds: lower = {self.lower_bound}, upper = {self.upper_bound}")
-            if np.isclose(self.lower_bound, self.upper_bound):
-                print("Optimal solution found")
-                return True, np.round(x)
-
-
+        
             # Branching on all integral variables
-            for i in current_node.definition.int_set:
+            for i in self.definition.int_set:
+                if not np.isclose(node.sol[i], round(node.sol[i]), atol=1e-3):
+                    print(f"Branching on variable {i}: {node.sol[i]} not integral")
                 # Create two new nodes for the branching
-                left_definition = current_node.definition.copy()
-                right_definition = current_node.definition.copy()
+                    left_lb = node.lb.copy()    
+                    left_ub = node.ub.copy()
+                    left_ub[i] = np.floor(node.sol[i])
 
-                # Update bounds for left and right nodes
-                left_definition.ub[i] = np.floor(x[i])
-                right_definition.lb[i] = np.ceil(x[i])
+                    right_lb = node.lb.copy()
+                    right_lb[i] = np.ceil(node.sol[i])
+                    right_ub = node.ub.copy()
+                
+                    # print(f"Branching on variable {i}: left = {left_definition.ub[i]}, right = {right_definition.lb[i]}")
 
-                print(f"Branching on variable {i}: left = {left_definition.ub[i]}, right = {right_definition.lb[i]}")
+                    left_success, left_node = self.create_node(left_lb, left_ub)
+                    right_success, right_node = self.create_node(right_lb, right_ub)
 
-                # Create new nodes
-                left_node = self.MIQPSolverNode(left_definition, parent=current_node)
-                right_node = self.MIQPSolverNode(right_definition, parent=current_node)
+                    if left_success:
+                        self.open_nodes.append(left_node)
+                        print(f"Left node added with bounds {left_node.lb} and {left_node.ub}")
+                    if right_success:
+                        self.open_nodes.append(right_node)
+                        print(f"Right node added with bounds {right_node.lb} and {right_node.ub}")
+                    break
 
-                # Add to open nodes
-                self.open_nodes.append(left_node)
-                self.open_nodes.append(right_node)
-
-
-        # If we exhaust all nodes and do not find a solution, return False
-        print("No solution found")
-        return False, None
+            if self.open_nodes == []:
+                print("No more nodes to explore, stopping search.")
+                break 
+            self.lower_bound = min(node.cost for node in self.open_nodes)
+        return self.best_solution is not None, self.best_solution, self.upper_bound
 
             
 
