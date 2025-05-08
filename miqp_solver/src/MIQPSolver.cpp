@@ -5,14 +5,18 @@
 namespace miqp_solver {
     MIQPSolver::MIQPSolver(const MIQPDefinition& miqp_definition) : miqp_definition_(miqp_definition) {
         // Initialize the solver with the MIQP definition
+
+
+        int n = miqp_definition_.getQ().rows();
+        int m = miqp_definition_.getA().rows();
+
         solver_.settings()->setVerbosity(false);
-        solver_.data()->setNumberOfVariables(miqp_definition_.getQ().rows());
-        solver_.data()->setNumberOfConstraints(miqp_definition_.getQ().rows());
+        solver_.data()->setNumberOfVariables(n);
+        solver_.data()->setNumberOfConstraints(m + n); // m constraints + n variables   
         const Eigen::SparseMatrix<double>& Q = miqp_definition_.getQ();
         solver_.data()->setHessianMatrix(miqp_definition_.getQ());
         Eigen::VectorXd c = miqp_definition_.getc();
         solver_.data()->setGradient(c); 
-
 
         // stack the constraints
         Eigen::SparseMatrix<double> A = miqp_definition_.getA();
@@ -20,33 +24,37 @@ namespace miqp_solver {
         Eigen::VectorXd lb = miqp_definition_.getlb();
         Eigen::VectorXd ub = miqp_definition_.getub();
 
-        int n = Q.rows();
 
-        Eigen::SparseMatrix<double> A_aug(n, n);    
-        A_aug.setIdentity(); // Initialize A_aug as an identity matrix of size n x n
+        Eigen::SparseMatrix<double> A_aug(n +m, n);    
+        
+        // set upper block of A_aug to the identity matrix
+        for(int k = 0; k < n; ++k) {
+            A_aug.insert(k, k) = 1.0;
+        }
+
 
         // Assign the original A matrix to the bottom rows of A_aug
-        // for (int k = 0; k < A.outerSize(); ++k) {
-        //     for (Eigen::SparseMatrix<double>::InnerIterator it(A, k); it; ++it) {
-        //         A_aug.insert(it.row() + n, it.col()) = it.value();
-        //     }
-        // }
+        for (int k = 0; k < A.outerSize(); ++k) {
+            for (Eigen::SparseMatrix<double>::InnerIterator it(A, k); it; ++it) {
+                A_aug.insert(it.row() + n, it.col()) = it.value();
+            }
+        }
 
         //convert A_aug to dense
         Eigen::MatrixXd A_dense = Eigen::MatrixXd(A_aug);
 
-        // Eigen::VectorXd ub_combined(b.size() + n);
-        // Eigen::VectorXd lb_combined(b.size() + n);
+        Eigen::VectorXd ub_combined(b.size() + n);
+        Eigen::VectorXd lb_combined(b.size() + n);
 
-        // ub_combined.head(n) = ub;
-        // lb_combined.head(n) = lb;
-        // ub_combined.tail(m) = b;
-        // lb_combined.tail(m) = Eigen::VectorXd::Constant(m, -std::numeric_limits<double>::infinity());
+        ub_combined.head(n) = ub;
+        lb_combined.head(n) = lb;
+        ub_combined.tail(m) = b;
+        lb_combined.tail(m) = Eigen::VectorXd::Constant(m, -std::numeric_limits<double>::infinity());
         
 
         solver_.data()->setLinearConstraintsMatrix(A_aug);
-        solver_.data()->setLowerBound(lb);
-        solver_.data()->setUpperBound(ub);
+        solver_.data()->setLowerBound(lb_combined);
+        solver_.data()->setUpperBound(ub_combined);
 
         solver_.initSolver();  
         Eigen::VectorXd x0 = Eigen::VectorXd::Zero(miqp_definition_.getQ().rows());
@@ -73,50 +81,20 @@ namespace miqp_solver {
             }
         }
 
-        solver_.updateBounds(lb, ub);
+        Eigen::VectorXd lb_combined(miqp_definition_.getlb().size() + miqp_definition_.getb().size());
+        Eigen::VectorXd ub_combined(miqp_definition_.getub().size() + miqp_definition_.getb().size());
+
+        lb_combined.head(lb.size()) = lb;
+        ub_combined.head(ub.size()) = ub;
+        lb_combined.tail(miqp_definition_.getb().size()) = Eigen::VectorXd::Constant(miqp_definition_.getb().size(), -10000);
+        ub_combined.tail(miqp_definition_.getb().size()) = miqp_definition_.getb();
+
+
+        solver_.updateBounds(lb_combined, ub_combined);
         solver_.solveProblem();
-
-        // std::cout << lb_combined <<std::endl;
-        // std::cout << ub_combined << std::endl;
-
 
         // Check if the problem is feasible
         auto status = solver_.getStatus();  // returns OsqpEigen::Status
-        
-        /*
-          DualInfeasibleInaccurate = OSQP_DUAL_INFEASIBLE_INACCURATE,
-    PrimalInfeasibleInaccurate = OSQP_PRIMAL_INFEASIBLE_INACCURATE,
-    SolvedInaccurate = OSQP_SOLVED_INACCURATE,
-    Solved = OSQP_SOLVED,
-    MaxIterReached = OSQP_MAX_ITER_REACHED,
-    PrimalInfeasible = OSQP_PRIMAL_INFEASIBLE,
-    DualInfeasible = OSQP_DUAL_INFEASIBLE,
-    Sigint = OSQP_SIGINT,
-        */
-
-        // switch(status) {
-        //     case OsqpEigen::Status::DualInfeasibleInaccurate:
-        //          std::cout << "Dual Infeasible Inaccurate" << std::endl;
-        //         break;
-        //     case OsqpEigen::Status::PrimalInfeasibleInaccurate:
-        //         std::cout << "Primal Infeasible Inaccurate" << std::endl;
-        //         break;
-        //     case OsqpEigen::Status::SolvedInaccurate:
-        //         std::cout << "Solved Inaccurate" << std::endl;
-        //         break;
-        //     case OsqpEigen::Status::Solved:
-        //         std::cout << "Solved" << std::endl;
-        //         break;
-        //     case OsqpEigen::Status::MaxIterReached:
-        //         std::cout << "Max Iterations Reached" << std::endl;
-        //         break;
-        //     case OsqpEigen::Status::Sigint:
-        //         std::cout << "SIGINT" << std::endl;
-        //         break;
-        //     default:
-        //         break;
-        // }
-
         if(!(status == OsqpEigen::Status::Solved || status == OsqpEigen::Status::SolvedInaccurate)) {
             return std::nullopt; // Node is infeasible
         }

@@ -10,9 +10,10 @@ int main() {
     c(0) = 1.2;
     c(1) = -0.9;
     Eigen::SparseMatrix<double> A(1, 2);
-    A.insert(0, 0) = 0.0;
+    A.insert(0, 0) = -1.0;
+    A.insert(0, 1) = 1.0;
     Eigen::VectorXd b(1);
-    b(0) = 1.0;
+    b(0) = -1.0;
     Eigen::VectorXd lb(2);
     lb(0) = -5.0;
     lb(1) = -5.0;
