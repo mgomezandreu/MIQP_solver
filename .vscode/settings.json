@@ -65,6 +65,11 @@
         "thread": "cpp",
         "cinttypes": "cpp",
         "typeindex": "cpp",
-        "typeinfo": "cpp"
+        "typeinfo": "cpp",
+        "*.tpp": "cpp",
+        "csignal": "cpp",
+        "any": "cpp",
+        "span": "cpp",
+        "variant": "cpp"
     }
 }

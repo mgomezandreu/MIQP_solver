@@ -119,7 +119,6 @@ class MIQPSolver:
 
         while self.open_nodes:
             checked_nodes_num += 1
-            
 
             node = self.open_nodes.pop(0)
             if self._is_integral(node.sol):

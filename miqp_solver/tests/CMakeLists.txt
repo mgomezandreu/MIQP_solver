@@ -5,6 +5,9 @@ target_link_libraries(miqp_tests gtest_main)
 # Link your project’s source code to the test target
 target_include_directories(miqp_tests PRIVATE ../include)
 #find all files in the src directory
+target_sources(miqp_tests PRIVATE
+    ../src/MIQPDefinition.cpp
+)
 
 # Register the test with CMake
 include(GoogleTest)

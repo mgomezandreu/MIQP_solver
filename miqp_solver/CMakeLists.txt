@@ -9,6 +9,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 include_directories(include)
 
 find_package(Eigen3 REQUIRED)
+find_package(OsqpEigen REQUIRED)
+
 include_directories(${EIGEN3_INCLUDE_DIR})
 
 # Collect all source files
@@ -16,6 +18,7 @@ file(GLOB SOURCES "src/*.cpp")
 
 # Build the executable
 add_executable(miqp_solver main.cpp ${SOURCES})
+target_link_libraries(miqp_solver PRIVATE OsqpEigen::OsqpEigen Eigen3::Eigen)
 
 
 
